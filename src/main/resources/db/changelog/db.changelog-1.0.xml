@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="21-03-2025 create weather info table" author="Faina">
+        <createTable tableName="weather_info">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="station_name" type="VARCHAR(255)"/>
+            <column name="wmo_code" type="INT"/>
+            <column name="air_temperature" type="DOUBLE"/>
+            <column name="wind_speed" type="DOUBLE"/>
+            <column name="weather_phenomenon" type="VARCHAR(255)"/>
+            <column name="timestamp" type="TIMESTAMP"/>
+        </createTable>
+        <rollback>
+            <dropTable tableName="weather_info"/>
+        </rollback>
+    </changeSet>
+    
+    <changeSet id="21-03-2025 create base fee table" author="Faina">
+        <createTable tableName="base_fees">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="city" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="vehicle_type" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="base_fee" type="DECIMAL(10, 2)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <rollback>
+            <dropTable tableName="base_fees"/>
+        </rollback>
+    </changeSet>
+    
+    <changeSet id="21-03-2025 insert data into base fee table" author="Faina">
+        <insert tableName="base_fees">
+            <column name="city" value="Tallinn"/>
+            <column name="vehicle_type" value="Car"/>
+            <column name="base_fee" value="4.0"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Tallinn"/>
+            <column name="vehicle_type" value="Scooter"/>
+            <column name="base_fee" value="3.5"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Tallinn"/>
+            <column name="vehicle_type" value="Bike"/>
+            <column name="base_fee" value="3.0"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Tartu"/>
+            <column name="vehicle_type" value="Car"/>
+            <column name="base_fee" value="3.5"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Tartu"/>
+            <column name="vehicle_type" value="Scooter"/>
+            <column name="base_fee" value="3.0"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Tartu"/>
+            <column name="vehicle_type" value="Bike"/>
+            <column name="base_fee" value="2.5"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Pärnu"/>
+            <column name="vehicle_type" value="Car"/>
+            <column name="base_fee" value="3.0"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Pärnu"/>
+            <column name="vehicle_type" value="Scooter"/>
+            <column name="base_fee" value="2.5"/>
+        </insert>
+        <insert tableName="base_fees">
+            <column name="city" value="Pärnu"/>
+            <column name="vehicle_type" value="Bike"/>
+            <column name="base_fee" value="2.0"/>
+        </insert>
+        <rollback>
+            <delete tableName="base_fees"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

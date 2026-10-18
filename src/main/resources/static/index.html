@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delivery Fee Calculator Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 0.5rem;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        select, button {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        select {
+            background-color: white;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-weight: 600;
+        }
+        button:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 4px;
+            min-height: 2rem;
+            display: flex;
+            align-items: center;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .fee-amount {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-left: 0.5rem;
+            color: #27ae60;
+        }
+        .hint {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-top: 1rem;
+            font-style: italic;
+        }
+        .status-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .status-weather {
+            background-color: #e8f4fd;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .status-scheduler {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            color: #495057;
+        }
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .btn-group button {
+            flex: 1;
+        }
+        .weather-info {
+            margin-top: 1rem;
+            padding: 1rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .weather-info h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <h1>Delivery Fee Calculator</h1>
+    <p class="hint">Test the API by selecting city and vehicle type below</p>
+
+    <div class="form-group">
+        <label for="city">City:</label>
+        <select id="city">
+            <option value="Tallinn">Tallinn</option>
+            <option value="Pärnu">Pärnu</option>
+            <option value="Tartu">Tartu</option>
+            <option value="Narva">Narva</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="vehicleType">Vehicle Type:</label>
+        <select id="vehicleType">
+            <option value="Car">Car</option>
+            <option value="Scooter">Scooter</option>
+            <option value="Bike">Bike</option>
+            <option value="Truck">Truck</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="datetime">Date and Time (optional):</label>
+        <input type="datetime-local" id="datetime" placeholder="Leave blank for current time">
+        <small class="hint">Format: YYYY-MM-DDTHH:MM (e.g., 2023-06-15T14:30)</small>
+    </div>
+
+    <div class="btn-group">
+        <button id="calculateBtn" type="button">Calculate Delivery Fee</button>
+        <button id="weatherBtn" type="button">Update Weather Data</button>
+    </div>
+
+    <div id="result" class="result" style="display: none;">
+        <span id="resultLabel"></span>
+        <span id="feeAmount" class="fee-amount"></span>
+    </div>
+
+    <div class="status-indicator status-weather">
+        <span>Weather Data:</span>
+        <span id="weatherStatus">Checking...</span>
+    </div>
+
+    <div class="status-indicator status-scheduler">
+        <span>Scheduler:</span>
+        <span id="schedulerStatus">Ready</span>
+    </div>
+
+    <div class="weather-info" id="weatherInfo" style="display: none;">
+        <h3>Latest Weather Information:</h3>
+        <div id="weatherDetails">No data available</div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const calculateBtn = document.getElementById('calculateBtn');
+            const weatherBtn = document.getElementById('weatherBtn');
+            const resultDiv = document.getElementById('result');
+            const resultLabel = document.getElementById('resultLabel');
+            const feeAmount = document.getElementById('feeAmount');
+            const weatherStatus = document.getElementById('weatherStatus');
+            const schedulerStatus = document.getElementById('schedulerStatus');
+            const weatherInfo = document.getElementById('weatherInfo');
+            const weatherDetails = document.getElementById('weatherDetails');
+
+            // Function to check weather data availability
+            async function checkWeatherData() {
+                try {
+                    const response = await fetch('/api/public/fee?city=Tallinn&vehicleType=Car');
+                    if (response.ok) {
+                        weatherStatus.textContent = 'Available';
+                        weatherStatus.style.color = '#155724';
+                        return true;
+                    } else {
+                        const errorData = await response.json();
+                        weatherStatus.textContent = 'Not Available';
+                        weatherStatus.style.color = '#721c24';
+                        return false;
+                    }
+                } catch (error) {
+                    weatherStatus.textContent = 'Error';
+                    weatherStatus.style.color = '#721c24';
+                    return false;
+                }
+            }
+
+            // Function to fetch latest weather data
+            async function fetchWeatherData() {
+                try {
+                    const response = await fetch('/api/public/fee?city=Tallinn&vehicleType=Car');
+                    if (response.ok) {
+                        const fee = await response.text();
+                        weatherDetails.textContent = `Latest fee calculation: ${fee} € (based on current weather data)`;
+                    } else {
+                        const errorData = await response.json();
+                        weatherDetails.textContent = `Error: ${errorData.message}`;
+                    }
+                } catch (error) {
+                    weatherDetails.textContent = `Error fetching data: ${error.message}`;
+                }
+            }
+
+            // Function to trigger weather update via scheduler
+            async function triggerWeatherUpdate() {
+                weatherBtn.disabled = true;
+                weatherBtn.textContent = 'Updating...';
+                schedulerStatus.textContent = 'Running...';
+                schedulerStatus.style.color = '#856404';
+
+                try {
+                    const response = await fetch('/scheduler/run', { method: 'GET' });
+                    if (response.ok) {
+                        schedulerStatus.textContent = 'Triggered';
+                        schedulerStatus.style.color = '#155724';
+                        // Wait a moment then check status
+                        setTimeout(async () => {
+                            await checkWeatherData();
+                            await fetchWeatherData();
+                        }, 2000);
+                    } else {
+                        schedulerStatus.textContent = 'Failed';
+                        schedulerStatus.style.color = '#721c24';
+                    }
+                } catch (error) {
+                    schedulerStatus.textContent = 'Error';
+                    schedulerStatus.style.color = '#721c24';
+                    console.error('Error triggering scheduler:', error);
+                } finally {
+                    weatherBtn.disabled = false;
+                    weatherBtn.textContent = 'Update Weather Data';
+                    // Reset status after a delay
+                    setTimeout(() => {
+                        schedulerStatus.textContent = 'Ready';
+                        schedulerStatus.style.color = '#495057';
+                    }, 3000);
+                }
+            }
+
+            // Calculate fee button handler
+            calculateBtn.addEventListener('click', async function() {
+                // Get form values
+                const city = document.getElementById('city').value;
+                const vehicleType = document.getElementById('vehicleType').value;
+                const datetimeInput = document.getElementById('datetime').value;
+                let datetime = null;
+
+                // Convert datetime-local format to ISO format if provided
+                if (datetimeInput) {
+                    // datetime-local returns YYYY-MM-DDTHH:MM, we need to add :00 for seconds
+                    datetime = datetimeInput + ':00';
+                }
+
+                // UI feedback
+                calculateBtn.disabled = true;
+                calculateBtn.textContent = 'Calculating...';
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result loading';
+                resultLabel.textContent = 'Delivery fee:';
+                feeAmount.textContent = '';
+
+                try {
+                    // Build query parameters
+                    let url = `/api/public/fee?city=${encodeURIComponent(city)}&vehicleType=${encodeURIComponent(vehicleType)}`;
+                    if (datetime) {
+                        url += `&datetime=${encodeURIComponent(datetime)}`;
+                    }
+
+                    // Call the API
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || `API returned ${response.status}`);
+                    }
+
+                    const feeText = await response.text();
+
+                    // Success!
+                    resultDiv.className = 'result success';
+                    feeAmount.textContent = `${feeText} €`;
+
+                } catch (error) {
+                    // Error handling
+                    resultDiv.className = 'result error';
+                    feeAmount.textContent = `Error: ${error.message}`;
+
+                } finally {
+                    // Reset button
+                    calculateBtn.disabled = false;
+                    calculateBtn.textContent = 'Calculate Delivery Fee';
+                }
+            });
+
+            // Weather update button handler
+            weatherBtn.addEventListener('click', triggerWeatherUpdate);
+
+            // Initial status check
+            checkWeatherData().then(() => {
+                fetchWeatherData();
+            });
+
+            // Periodic status updates (every 30 seconds)
+            setInterval(checkWeatherData, 30000);
+        });
+    </script>
+</body>
+</html>
