@@ -33,6 +33,6 @@ public enum VehicleType {
             }
         }
 
-        throw new IllegalArgumentException("Invalid vehicle type: " + type);
+        throw new IllegalArgumentException("Invalid vehicle type provided: " + type);
     }
 }

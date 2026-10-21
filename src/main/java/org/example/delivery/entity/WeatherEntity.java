@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter @Setter
 @Entity
@@ -18,12 +18,11 @@ public class WeatherEntity {
     @Column
     private String wmoCode;
     @Column
-    private double airTemperature;
+    private Double airTemperature;
     @Column
-    private double windSpeed;
+    private Double windSpeed;
     @Column
     private String weatherPhenomenon;
     @Column
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 }
-

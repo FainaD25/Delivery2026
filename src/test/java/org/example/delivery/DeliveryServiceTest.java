@@ -4,22 +4,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.example.delivery.entity.BaseFeeEntity;
 import org.example.delivery.entity.WeatherEntity;
+import org.example.delivery.config.DeliveryDomainProperties;
 import org.example.delivery.repository.BaseFeeRepository;
 import org.example.delivery.repository.WeatherRepository;
 import org.example.delivery.service.DeliveryService;
+import org.example.delivery.service.FeeConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.util.TestPropertyValues;
-import org.springframework.context.annotation.Bean;
-import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.Map;
 
 import static org.mockito.Mockito.*;
 
@@ -31,6 +30,12 @@ class DeliveryServiceTest {
 
     @Mock
     private BaseFeeRepository baseFeeRepository;
+
+    @Mock
+    private FeeConfigurationService feeConfigurationService;
+
+    @Mock
+    private DeliveryDomainProperties domainProperties;
 
     @InjectMocks
     private DeliveryService deliveryService;
@@ -46,7 +51,29 @@ class DeliveryServiceTest {
     private BaseFeeEntity parnuBikeBaseFee;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
+        lenient().when(domainProperties.getStations()).thenReturn(Map.of(
+                "Tallinn", "Tallinn-Harku",
+                "Tartu", "Tartu-Tõravere",
+                "Pärnu", "Pärnu"));
+        lenient().when(domainProperties.stationFor(anyString()))
+                .thenAnswer(invocation -> Map.of(
+                        "Tallinn", "Tallinn-Harku",
+                        "Tartu", "Tartu-Tõravere",
+                        "Pärnu", "Pärnu")
+                        .get(invocation.getArgument(0)));
+        lenient().when(domainProperties.defaultBaseFee(anyString(), anyString()))
+                .thenAnswer(invocation -> Map.of(
+                        "Tallinn|Car", new java.math.BigDecimal("4.00"),
+                        "Tallinn|Scooter", new java.math.BigDecimal("3.50"),
+                        "Tallinn|Bike", new java.math.BigDecimal("3.00"),
+                        "Tartu|Car", new java.math.BigDecimal("3.50"),
+                        "Tartu|Scooter", new java.math.BigDecimal("3.00"),
+                        "Tartu|Bike", new java.math.BigDecimal("2.50"),
+                        "Pärnu|Car", new java.math.BigDecimal("3.00"),
+                        "Pärnu|Scooter", new java.math.BigDecimal("2.50"),
+                        "Pärnu|Bike", new java.math.BigDecimal("2.00"))
+                        .get(invocation.getArgument(0) + "|" + invocation.getArgument(1)));
         tallinnCarBaseFee = createBaseFeeEntity("Tallinn", "Car" , 4.0);
         tallinnScooterBaseFee = createBaseFeeEntity("Tallinn", "Scooter" , 3.5);
         tallinnBikeBaseFee = createBaseFeeEntity("Tallinn", "Bike" , 3.0);
@@ -63,17 +90,19 @@ class DeliveryServiceTest {
     }
 
     private void setThresholdValues() {
-        ReflectionTestUtils.setField(deliveryService, "windSpeedHighThreshold", 20.0);
-        ReflectionTestUtils.setField(deliveryService, "windSpeedModerateThreshold", 10.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.wind-speed-high-threshold", 20.0)).thenReturn(20.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.wind-speed-moderate-threshold", 10.0)).thenReturn(10.0);
 
-        ReflectionTestUtils.setField(deliveryService, "coldTemperatureThreshold", -10.0);
-        ReflectionTestUtils.setField(deliveryService, "freezingTemperatureThreshold", 0.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.cold-temperature-threshold", -10.0)).thenReturn(-10.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.freezing-temperature-threshold", 0.0)).thenReturn(0.0);
 
-        ReflectionTestUtils.setField(deliveryService, "windSpeedFee", 0.5);
-        ReflectionTestUtils.setField(deliveryService, "coldTemperatureFee", 0.5);
-        ReflectionTestUtils.setField(deliveryService, "freezingTemperatureFee", 1.0);
-        ReflectionTestUtils.setField(deliveryService, "precipitationFee", 0.5);
-        ReflectionTestUtils.setField(deliveryService, "severePrecipitationFee", 1.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.wind-speed-fee", 0.5)).thenReturn(0.5);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.cold-temperature-fee", 0.5)).thenReturn(0.5);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.freezing-temperature-fee", 1.0)).thenReturn(1.0);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.precipitation-fee", 0.5)).thenReturn(0.5);
+        lenient().when(feeConfigurationService.getDoubleValue("delivery.fee.severe-precipitation-fee", 1.0)).thenReturn(1.0);
+        lenient().when(feeConfigurationService.getDoubleValue(anyString(), anyDouble(), any(Instant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
     }
 
     private WeatherEntity createWeatherEntity(String stationName, double temperature, double windSpeed, String phenomenon) {
@@ -82,7 +111,7 @@ class DeliveryServiceTest {
         entity.setAirTemperature(temperature);
         entity.setWindSpeed(windSpeed);
         entity.setWeatherPhenomenon(phenomenon);
-        entity.setTimestamp(LocalDateTime.now());
+        entity.setTimestamp(Instant.now());
         return entity;
     }
 
@@ -96,12 +125,13 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Tallinn_NormalConditions() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
 
-        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
+        lenient().when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
 
         assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn"));
         assertEquals(3.5, deliveryService.calculateTotalFee("Scooter", "Tallinn"));
@@ -110,6 +140,7 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Tartu_NormalConditions() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Tartu-Tõravere", 5, 5, "Clear");
 
         when(weatherRepository.findLatestByStationName("Tartu-Tõravere")).thenReturn(entity);
@@ -124,6 +155,7 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Parnu_NormalConditions() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Pärnu", 5, 5, "Clear");
 
         when(weatherRepository.findLatestByStationName("Pärnu")).thenReturn(entity);
@@ -140,10 +172,10 @@ class DeliveryServiceTest {
     void testCalculateFee_Tallinn_LowTemperature() {
         WeatherEntity entity = createWeatherEntity("Tallinn-Harku", -10, 5, "Clear");
 
-        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
+        lenient().when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
 
         assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn"));
         assertEquals(4.0, deliveryService.calculateTotalFee("Scooter", "Tallinn"));
@@ -393,6 +425,7 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Tallinn_Glaze() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Glaze");
 
         when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
@@ -409,6 +442,7 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Tartu_Hail() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Tartu-Tõravere", 5, 5, "Hail");
 
         when(weatherRepository.findLatestByStationName("Tartu-Tõravere")).thenReturn(entity);
@@ -425,6 +459,7 @@ class DeliveryServiceTest {
 
     @Test
     void testCalculateFee_Parnu_Thunder() {
+        setThresholdValues();
         WeatherEntity entity = createWeatherEntity("Pärnu", 5, 5, "Thunder");
 
         when(weatherRepository.findLatestByStationName("Pärnu")).thenReturn(entity);
@@ -445,8 +480,58 @@ class DeliveryServiceTest {
     }
 
     @Test
+    void testCalculateFee_RejectsNullAndBlankInputs() {
+        assertAll(
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> deliveryService.calculateTotalFee(null, "Tallinn")),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> deliveryService.calculateTotalFee("", "Tallinn")),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> deliveryService.calculateTotalFee("Car", null)),
+                () -> assertThrows(IllegalArgumentException.class,
+                        () -> deliveryService.calculateTotalFee("Car", ""))
+        );
+    }
+
+    @Test
+    void testCalculateFee_UsesDefaultBaseFeeWhenDatabaseValueIsMissing() {
+        WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
+        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
+        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.empty());
+
+        assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn"));
+    }
+
+    @Test
+    void testCalculateFee_PreservesHistoricalZeroExtraFee() {
+        WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
+        when(weatherRepository.findByStationNameAndTimestampBefore(anyString(), any())).thenReturn(entity);
+        lenient().when(baseFeeRepository.findByCityAndVehicleTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(
+                eq("Tallinn"), eq("Car"), any())).thenReturn(java.util.List.of(tallinnCarBaseFee));
+
+        assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", "2026-01-01T12:00:00Z"));
+    }
+
+    @Test
     void testCalculateFee_NoWeatherDataAvailable() {
         assertThrows(IllegalStateException.class, () -> deliveryService.calculateTotalFee("Car", "Pärnu"));
+    }
+
+    @Test
+    void testCalculateFee_RejectsIncompleteWeatherData() {
+        WeatherEntity missingTemperature = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
+        missingTemperature.setAirTemperature(null);
+        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(missingTemperature);
+
+        assertThrows(IllegalStateException.class,
+                () -> deliveryService.calculateTotalFee("Car", "Tallinn"));
+
+        WeatherEntity missingWind = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
+        missingWind.setWindSpeed(null);
+        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(missingWind);
+
+        assertThrows(IllegalStateException.class,
+                () -> deliveryService.calculateTotalFee("Car", "Tallinn"));
     }
 
     @Test
@@ -458,27 +543,24 @@ class DeliveryServiceTest {
         when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
         when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
 
-        assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", "2023-06-15T14:30:00"));
-        assertEquals(4.0, deliveryService.calculateTotalFee("Scooter", "Tallinn", "2023-06-15T14:30:00"));
-        assertEquals(3.5, deliveryService.calculateTotalFee("Bike", "Tallinn", "2023-06-15T14:30:00"));
+        assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", "2023-06-15T14:30:00Z"));
+        assertEquals(4.0, deliveryService.calculateTotalFee("Scooter", "Tallinn", "2023-06-15T14:30:00Z"));
+        assertEquals(3.5, deliveryService.calculateTotalFee("Bike", "Tallinn", "2023-06-15T14:30:00Z"));
 
         verify(weatherRepository, times(3)).findByStationNameAndTimestampBefore(anyString(), any());
     }
 
     @Test
-    void testCalculateFee_WithInvalidDatetime_FallbackToLatest() {
+    void testCalculateFee_WithInvalidDatetime_IsRejected() {
         WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Light rain");
 
-        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
+        lenient().when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
 
-        assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", "invalid-datetime"));
-        assertEquals(4.0, deliveryService.calculateTotalFee("Scooter", "Tallinn", "invalid-datetime"));
-        assertEquals(3.5, deliveryService.calculateTotalFee("Bike", "Tallinn", "invalid-datetime"));
-
-        verify(weatherRepository, times(3)).findLatestByStationName("Tallinn-Harku");
+        assertThrows(IllegalArgumentException.class,
+                () -> deliveryService.calculateTotalFee("Car", "Tallinn", "invalid-datetime"));
     }
 
     @Test
@@ -525,10 +607,10 @@ class DeliveryServiceTest {
     void testCalculateFee_InvalidDatetimeFormats() {
         WeatherEntity entity = createWeatherEntity("Tallinn-Harku", 5, 5, "Clear");
 
-        when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
-        when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
+        lenient().when(weatherRepository.findLatestByStationName("Tallinn-Harku")).thenReturn(entity);
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Car")).thenReturn(Optional.of(tallinnCarBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Scooter")).thenReturn(Optional.of(tallinnScooterBaseFee));
+        lenient().when(baseFeeRepository.findByCityAndVehicleType("Tallinn", "Bike")).thenReturn(Optional.of(tallinnBikeBaseFee));
 
         String[] invalidDatetimes = {
             "",                           // Empty string
@@ -542,13 +624,13 @@ class DeliveryServiceTest {
         };
 
         for (String invalidDatetime : invalidDatetimes) {
-            assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", invalidDatetime),
-                    "Failed for invalid datetime: " + invalidDatetime);
-            assertEquals(3.5, deliveryService.calculateTotalFee("Scooter", "Tallinn", invalidDatetime),
-                    "Failed for invalid datetime: " + invalidDatetime);
-            assertEquals(3.0, deliveryService.calculateTotalFee("Bike", "Tallinn", invalidDatetime),
-                    "Failed for invalid datetime: " + invalidDatetime);
+            if (invalidDatetime.isEmpty()) {
+                assertEquals(4.0, deliveryService.calculateTotalFee("Car", "Tallinn", invalidDatetime));
+            } else {
+                assertThrows(IllegalArgumentException.class,
+                        () -> deliveryService.calculateTotalFee("Car", "Tallinn", invalidDatetime),
+                        "Failed for invalid datetime: " + invalidDatetime);
+            }
         }
-        verify(weatherRepository, atLeastOnce()).findLatestByStationName("Tallinn-Harku");
     }
 }

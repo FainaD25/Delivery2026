@@ -20,7 +20,7 @@
             <dropTable tableName="weather_info"/>
         </rollback>
     </changeSet>
-    
+
     <changeSet id="21-03-2025 create base fee table" author="Faina">
         <createTable tableName="base_fees">
             <column name="id" type="BIGINT" autoIncrement="true">
@@ -40,7 +40,7 @@
             <dropTable tableName="base_fees"/>
         </rollback>
     </changeSet>
-    
+
     <changeSet id="21-03-2025 insert data into base fee table" author="Faina">
         <insert tableName="base_fees">
             <column name="city" value="Tallinn"/>
@@ -89,6 +89,142 @@
         </insert>
         <rollback>
             <delete tableName="base_fees"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="20-10-2026 create fee configuration table" author="Faina"
+               logicalFilePath="db/changelog/db.changelog-2.0.xml">
+        <createTable tableName="fee_configuration">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="fee_key" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="fee_value" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="VARCHAR(255)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="last_updated" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_by" type="VARCHAR(100)">
+                <constraints nullable="true"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20-10-2026 insert initial fee configuration data" author="Faina"
+               logicalFilePath="db/changelog/db.changelog-2.0.xml">
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.cold-temperature-threshold</column>
+            <column name="fee_value">-10.0</column>
+            <column name="description">Temperature threshold below which freezing temperature fee applies</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.freezing-temperature-threshold</column>
+            <column name="fee_value">0.0</column>
+            <column name="description">Temperature threshold at which freezing temperature fee stops and cold temperature fee starts</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.cold-temperature-fee</column>
+            <column name="fee_value">0.5</column>
+            <column name="description">Fee applied when temperature is between cold and freezing thresholds</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.freezing-temperature-fee</column>
+            <column name="fee_value">1.0</column>
+            <column name="description">Fee applied when temperature is below cold threshold</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.wind-speed-moderate-threshold</column>
+            <column name="fee_value">10.0</column>
+            <column name="description">Wind speed threshold at which wind speed fee starts to apply</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.wind-speed-high-threshold</column>
+            <column name="fee_value">20.0</column>
+            <column name="description">Wind speed threshold above which usage is forbidden for certain vehicle types</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.wind-speed-fee</column>
+            <column name="fee_value">0.5</column>
+            <column name="description">Fee applied when wind speed is at or above moderate threshold</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.precipitation-fee</column>
+            <column name="fee_value">0.5</column>
+            <column name="description">Fee applied for precipitation (rain)</column>
+            <column name="updated_by">system</column>
+        </insert>
+        <insert tableName="fee_configuration">
+            <column name="fee_key">delivery.fee.severe-precipitation-fee</column>
+            <column name="fee_value">1.0</column>
+            <column name="description">Fee applied for severe precipitation (snow/sleet)</column>
+            <column name="updated_by" value="system"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="20-10-2026 version fee data" author="Faina"
+               logicalFilePath="db/changelog/db.changelog-3.0.xml">
+        <addColumn tableName="base_fees">
+            <column name="effective_from" type="TIMESTAMP"/>
+        </addColumn>
+        <addColumn tableName="fee_configuration">
+            <column name="effective_from" type="TIMESTAMP"/>
+        </addColumn>
+        <sql>ALTER TABLE fee_configuration DROP CONSTRAINT IF EXISTS CONSTRAINT_INDEX_4</sql>
+    </changeSet>
+
+    <changeSet id="21-10-2026 add fee deletion timestamps" author="Faina"
+               logicalFilePath="db/changelog/db.changelog-4.0.xml">
+        <addColumn tableName="base_fees">
+            <column name="deleted_at" type="TIMESTAMP"/>
+        </addColumn>
+        <addColumn tableName="fee_configuration">
+            <column name="deleted_at" type="TIMESTAMP"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="21-10-2026 use timezone-aware fee timestamps" author="Faina"
+               logicalFilePath="db/changelog/db.changelog-5.0.xml">
+        <modifyDataType tableName="weather_info" columnName="timestamp" newDataType="TIMESTAMP WITH TIME ZONE"/>
+        <modifyDataType tableName="base_fees" columnName="effective_from" newDataType="TIMESTAMP WITH TIME ZONE"/>
+        <modifyDataType tableName="base_fees" columnName="deleted_at" newDataType="TIMESTAMP WITH TIME ZONE"/>
+        <modifyDataType tableName="fee_configuration" columnName="last_updated" newDataType="TIMESTAMP WITH TIME ZONE"/>
+        <modifyDataType tableName="fee_configuration" columnName="effective_from" newDataType="TIMESTAMP WITH TIME ZONE"/>
+        <modifyDataType tableName="fee_configuration" columnName="deleted_at" newDataType="TIMESTAMP WITH TIME ZONE"/>
+    </changeSet>
+
+    <changeSet id="21-10-2026 add lookup indexes" author="Faina">
+        <createIndex indexName="idx_weather_station_timestamp" tableName="weather_info">
+            <column name="station_name"/>
+            <column name="timestamp"/>
+        </createIndex>
+        <createIndex indexName="idx_base_fee_lookup" tableName="base_fees">
+            <column name="city"/>
+            <column name="vehicle_type"/>
+            <column name="effective_from"/>
+            <column name="deleted_at"/>
+        </createIndex>
+        <createIndex indexName="idx_fee_configuration_lookup" tableName="fee_configuration">
+            <column name="fee_key"/>
+            <column name="effective_from"/>
+            <column name="deleted_at"/>
+        </createIndex>
+        <rollback>
+            <dropIndex indexName="idx_weather_station_timestamp" tableName="weather_info"/>
+            <dropIndex indexName="idx_base_fee_lookup" tableName="base_fees"/>
+            <dropIndex indexName="idx_fee_configuration_lookup" tableName="fee_configuration"/>
         </rollback>
     </changeSet>
 </databaseChangeLog>

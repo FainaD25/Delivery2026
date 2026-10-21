@@ -32,7 +32,9 @@ public class DeliveryController {
 
     @Operation(
             summary = "Get delivery fee from database based on chosen vehicle type and city",
-            description = "Retrieves a base fee for given combination of vehicle and city, calculates additional fees based on weather data (latest or at specified time), and returns the total fee",
+            description = "Calculates the total fee from the regional base fee and weather-based extra fees. " +
+                    "Without datetime, the latest weather and active fee versions are used. With datetime, " +
+                    "the weather observation and fee versions valid at that UTC instant are used.",
             parameters = {
                     @Parameter(
                             name = "city",
@@ -58,13 +60,15 @@ public class DeliveryController {
                     ),
                     @Parameter(
                             name = "datetime",
-                            description = "Optional date and time for which to calculate the fee (if not provided, uses current time)",
+                            description = "Optional ISO-8601 date and time with a required timezone offset. " +
+                                    "Use 2026-10-20T14:30:00+03:00 or 2026-10-20T11:30:00Z. " +
+                                    "All persisted timestamps are UTC instants. If omitted, current values are used.",
                             in = ParameterIn.QUERY,
                             required = false,
-                            schema = @Schema(implementation = String.class, example = "2023-01-01T12:00:00"),
+                            schema = @Schema(implementation = String.class, example = "2026-10-20T14:30:00+03:00"),
                             content = @Content(
                                     mediaType = "application/json",
-                                    examples = @ExampleObject(value = "2023-06-15T14:30:00")
+                                    examples = @ExampleObject(value = "2026-10-20T14:30:00+03:00")
                             )
                     )
             }

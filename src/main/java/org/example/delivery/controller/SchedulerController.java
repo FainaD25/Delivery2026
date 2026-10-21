@@ -24,6 +24,10 @@ public class SchedulerController {
     @GetMapping("/run")
     @Operation(summary = "Trigger task", description = "Triggers a task for fetching weather info")
     @ApiResponse(responseCode = "200", description = "Successful execution")
+    @ApiResponse(responseCode = "502", description = "Weather data import failed",
+            content = @io.swagger.v3.oas.annotations.media.Content(
+                    schema = @io.swagger.v3.oas.annotations.media.Schema(
+                            implementation = org.example.delivery.exceptions.response.ExceptionResponse.class)))
     public void triggerTask() {
         weatherDataFetcher.fetchWeatherData();
         log.info("Scheduled task executed manually");

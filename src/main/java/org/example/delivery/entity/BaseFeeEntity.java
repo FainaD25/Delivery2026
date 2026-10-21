@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Instant;
+
 @Getter @Setter
 @Entity
 @Table(name = "base_fees")
@@ -21,4 +23,9 @@ public class BaseFeeEntity {
     @Column(nullable = false)
     private double baseFee;
 
+    @Column(name = "effective_from")
+    private Instant effectiveFrom;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 }

@@ -5,7 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Repository
 public interface WeatherRepository extends JpaRepository<WeatherEntity, Long> {
@@ -14,8 +14,8 @@ public interface WeatherRepository extends JpaRepository<WeatherEntity, Long> {
     WeatherEntity findLatestByStationName(String stationName);
 
     @Query("SELECT w FROM WeatherEntity w WHERE w.stationName = :stationName AND w.timestamp <= :timestamp ORDER BY w.timestamp DESC LIMIT 1")
-    WeatherEntity findByStationNameAndTimestampBefore(String stationName, LocalDateTime timestamp);
+    WeatherEntity findByStationNameAndTimestampBefore(String stationName, Instant timestamp);
 
     @Query("SELECT w FROM WeatherEntity w WHERE w.stationName = :stationName AND w.timestamp >= :timestamp ORDER BY w.timestamp ASC LIMIT 1")
-    WeatherEntity findByStationNameAndTimestampAfter(String stationName, LocalDateTime timestamp);
+    WeatherEntity findByStationNameAndTimestampAfter(String stationName, Instant timestamp);
 }

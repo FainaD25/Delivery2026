@@ -2,18 +2,20 @@ package org.example.delivery.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.delivery.config.DeliveryDomainProperties;
+import org.example.delivery.config.DeliveryFeeDefaults;
 import org.example.delivery.entity.BaseFeeEntity;
 import org.example.delivery.entity.WeatherEntity;
 import org.example.delivery.repository.BaseFeeRepository;
 import org.example.delivery.repository.WeatherRepository;
 import org.example.delivery.util.VehicleType;
 import org.example.delivery.util.WeatherPhenomenon;
-import org.springframework.beans.factory.annotation.Value;
+import org.example.delivery.util.QueryTimeParser;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Map;
+import java.time.Instant;
+import java.math.BigDecimal;
 
 @Service
 @RequiredArgsConstructor
@@ -21,39 +23,71 @@ import java.util.Map;
 public class DeliveryService {
     private final WeatherRepository weatherRepository;
     private final BaseFeeRepository baseFeeRepository;
+    private final FeeConfigurationService feeConfigurationService;
+    private final DeliveryDomainProperties domainProperties;
+    @Autowired
+    private DeliveryFeeDefaults feeDefaults = new DeliveryFeeDefaults();
 
-    private final Map<String, String> cityStationNames = Map.of(
-            "Tallinn", "Tallinn-Harku",
-            "Tartu", "Tartu-Tõravere",
-            "Pärnu", "Pärnu"
-    );
+    private double getConfigurationValue(String key, double defaultValue, Instant effectiveAt) {
+        if (effectiveAt == null) {
+            return feeConfigurationService.getDoubleValue(key, defaultValue);
+        }
+        return feeConfigurationService.getDoubleValue(key, defaultValue, effectiveAt);
+    }
 
-    @Value("${delivery.fee.cold-temperature-threshold:-10.0}")
-    private double coldTemperatureThreshold;
+    private double getColdTemperatureThreshold(Instant effectiveAt) {
+        return getConfigurationValue(
+                "delivery.fee.cold-temperature-threshold",
+                feeDefaults.getColdTemperatureThreshold(), effectiveAt);
+    }
 
-    @Value("${delivery.fee.freezing-temperature-threshold:0.0}")
-    private double freezingTemperatureThreshold;
+    private double getFreezingTemperatureThreshold(Instant effectiveAt) {
+        return getConfigurationValue(
+                "delivery.fee.freezing-temperature-threshold",
+                feeDefaults.getFreezingTemperatureThreshold(), effectiveAt);
+    }
 
-    @Value("${delivery.fee.wind-speed-moderate-threshold:10.0}")
-    private double windSpeedModerateThreshold;
+    private double getWindSpeedModerateThreshold(Instant effectiveAt) {
+        return getConfigurationValue(
+                "delivery.fee.wind-speed-moderate-threshold",
+                feeDefaults.getWindSpeedModerateThreshold(), effectiveAt);
+    }
 
-    @Value("${delivery.fee.wind-speed-high-threshold:20.0}")
-    private double windSpeedHighThreshold;
+    private double getWindSpeedHighThreshold(Instant effectiveAt) {
+        return getConfigurationValue(
+                "delivery.fee.wind-speed-high-threshold",
+                feeDefaults.getWindSpeedHighThreshold(), effectiveAt);
+    }
 
-    @Value("${delivery.fee.cold-temperature-fee:0.5}")
-    private double coldTemperatureFee;
+    private BigDecimal getColdTemperatureFee(Instant effectiveAt) {
+        return BigDecimal.valueOf(getConfigurationValue(
+                "delivery.fee.cold-temperature-fee",
+                feeDefaults.getColdTemperatureFee().doubleValue(), effectiveAt));
+    }
 
-    @Value("${delivery.fee.freezing-temperature-fee:1.0}")
-    private double freezingTemperatureFee;
+    private BigDecimal getFreezingTemperatureFee(Instant effectiveAt) {
+        return BigDecimal.valueOf(getConfigurationValue(
+                "delivery.fee.freezing-temperature-fee",
+                feeDefaults.getFreezingTemperatureFee().doubleValue(), effectiveAt));
+    }
 
-    @Value("${delivery.fee.wind-speed-fee:0.5}")
-    private double windSpeedFee;
+    private BigDecimal getWindSpeedFee(Instant effectiveAt) {
+        return BigDecimal.valueOf(getConfigurationValue(
+                "delivery.fee.wind-speed-fee",
+                feeDefaults.getWindSpeedFee().doubleValue(), effectiveAt));
+    }
 
-    @Value("${delivery.fee.precipitation-fee:0.5}")
-    private double precipitationFee;
+    private BigDecimal getPrecipitationFee(Instant effectiveAt) {
+        return BigDecimal.valueOf(getConfigurationValue(
+                "delivery.fee.precipitation-fee",
+                feeDefaults.getPrecipitationFee().doubleValue(), effectiveAt));
+    }
 
-    @Value("${delivery.fee.severe-precipitation-fee:1.0}")
-    private double severePrecipitationFee;
+    private BigDecimal getSeverePrecipitationFee(Instant effectiveAt) {
+        return BigDecimal.valueOf(getConfigurationValue(
+                "delivery.fee.severe-precipitation-fee",
+                feeDefaults.getSeverePrecipitationFee().doubleValue(), effectiveAt));
+    }
 
     /**
      * Calculates the air temperature based fee.
@@ -61,21 +95,25 @@ public class DeliveryService {
      * @param entity the weather entity containing temperature data
      * @return the fee based on air temperature
      */
-    private double calculateAirTemperatureFee(WeatherEntity entity) {
+    private double calculateAirTemperatureFee(WeatherEntity entity, Instant effectiveAt) {
         double temperature = entity.getAirTemperature();
+        double coldThreshold = getColdTemperatureThreshold(effectiveAt);
+        double freezingThreshold = getFreezingTemperatureThreshold(effectiveAt);
+        BigDecimal coldFee = getColdTemperatureFee(effectiveAt);
+        BigDecimal freezingFee = getFreezingTemperatureFee(effectiveAt);
 
-        if (temperature < coldTemperatureThreshold) {
+        if (temperature < coldThreshold) {
             log.debug("Temperature {} is below threshold {}, applying freezing temperature fee: {}",
-                    temperature, coldTemperatureThreshold, freezingTemperatureFee);
-            return freezingTemperatureFee;
-        } else if (temperature <= freezingTemperatureThreshold) {
+                    temperature, coldThreshold, freezingFee);
+            return freezingFee.doubleValue();
+        } else if (temperature <= freezingThreshold) {
             log.debug("Temperature {} is between {} and {}, applying cold temperature fee: {}",
-                    temperature, coldTemperatureThreshold, freezingTemperatureThreshold, coldTemperatureFee);
-            return coldTemperatureFee;
+                    temperature, coldThreshold, freezingThreshold, coldFee);
+            return coldFee.doubleValue();
         }
 
         log.debug("Temperature {} is above freezing threshold {}, no temperature fee applied",
-                temperature, freezingTemperatureThreshold);
+                temperature, freezingThreshold);
         return 0.0;
     }
 
@@ -86,8 +124,11 @@ public class DeliveryService {
      * @return the fee based on wind speed
      * @throws IllegalArgumentException if wind speed is too high for certain vehicle types
      */
-    private double calculateWindSpeedFee(WeatherEntity entity) {
+    private double calculateWindSpeedFee(WeatherEntity entity, Instant effectiveAt) {
         double windSpeed = entity.getWindSpeed();
+        double windSpeedHighThreshold = getWindSpeedHighThreshold(effectiveAt);
+        double windSpeedModerateThreshold = getWindSpeedModerateThreshold(effectiveAt);
+        BigDecimal windSpeedFee = getWindSpeedFee(effectiveAt);
 
         if (windSpeed > windSpeedHighThreshold) {
             log.debug("Wind speed {} exceeds high threshold {}, throwing forbidden exception",
@@ -96,7 +137,7 @@ public class DeliveryService {
         } else if (windSpeed >= windSpeedModerateThreshold) {
             log.debug("Wind speed {} is at or above moderate threshold {}, applying wind speed fee: {}",
                     windSpeed, windSpeedModerateThreshold, windSpeedFee);
-            return windSpeedFee;
+            return windSpeedFee.doubleValue();
         }
 
         log.debug("Wind speed {} is below moderate threshold {}, no wind speed fee applied",
@@ -111,7 +152,7 @@ public class DeliveryService {
      * @return the fee based on weather phenomenon
      * @throws IllegalArgumentException if weather phenomenon forbids certain vehicle types
      */
-    private double calculateWeatherPhenomenonFee(WeatherEntity entity) {
+    private double calculateWeatherPhenomenonFee(WeatherEntity entity, Instant effectiveAt) {
         String phenomenon = entity.getWeatherPhenomenon();
 
         if (phenomenon == null || phenomenon.isEmpty()) {
@@ -120,6 +161,8 @@ public class DeliveryService {
         }
 
         String lowerCasePhenomenon = phenomenon.toLowerCase();
+        BigDecimal severePrecipitationFee = getSeverePrecipitationFee(effectiveAt);
+        BigDecimal precipitationFee = getPrecipitationFee(effectiveAt);
 
         if (WeatherPhenomenon.isSevereForbidden(lowerCasePhenomenon)) {
             log.debug("Weather phenomenon {} is severe forbidden, throwing forbidden exception",
@@ -130,13 +173,13 @@ public class DeliveryService {
         if (WeatherPhenomenon.isSevereFeeAll(lowerCasePhenomenon)) {
             log.debug("Weather phenomenon {} is severe for all vehicles, applying severe precipitation fee: {}",
                     phenomenon, severePrecipitationFee);
-            return severePrecipitationFee;
+            return severePrecipitationFee.doubleValue();
         }
 
         if (WeatherPhenomenon.isModerateFee(lowerCasePhenomenon)) {
             log.debug("Weather phenomenon {} is moderate, applying precipitation fee: {}",
                     phenomenon, precipitationFee);
-            return precipitationFee;
+            return precipitationFee.doubleValue();
         }
 
         log.debug("Weather phenomenon {} does not match any fee criteria, no phenomenon fee applied",
@@ -152,7 +195,7 @@ public class DeliveryService {
      * @param vehicleTypeStr the vehicle type as string
      * @return the extra fee based on weather conditions
      */
-    private double calculateExtraFee(WeatherEntity entity, String vehicleTypeStr) {
+    private double calculateExtraFee(WeatherEntity entity, String vehicleTypeStr, Instant effectiveAt) {
         if (vehicleTypeStr == null || vehicleTypeStr.isEmpty()) {
             throw new IllegalArgumentException("Vehicle type cannot be null or empty");
         }
@@ -163,15 +206,15 @@ public class DeliveryService {
         if (vehicleType != VehicleType.CAR) {
             log.debug("Calculating extra fees for vehicle type {} (not CAR)", vehicleType);
 
-            double tempFee = calculateAirTemperatureFee(entity);
-            double phenomenonFee = calculateWeatherPhenomenonFee(entity);
+            double tempFee = calculateAirTemperatureFee(entity, effectiveAt);
+            double phenomenonFee = calculateWeatherPhenomenonFee(entity, effectiveAt);
 
             fee += tempFee + phenomenonFee;
             log.debug("Temperature fee: {}, Phenomenon fee: {}, Subtotal: {}",
                     tempFee, phenomenonFee, fee);
 
             if (vehicleType == VehicleType.BIKE) {
-                double windFee = calculateWindSpeedFee(entity);
+                double windFee = calculateWindSpeedFee(entity, effectiveAt);
                 fee += windFee;
                 log.debug("Wind speed fee: {}, Total fee: {}", windFee, fee);
             }
@@ -217,7 +260,7 @@ public class DeliveryService {
         log.info("Calculating delivery fee for vehicle type '{}' in city '{}'", vehicleTypeStr, city);
 
         String normalizedCity = null;
-        for (String key : cityStationNames.keySet()) {
+        for (String key : domainProperties.getStations().keySet()) {
             if (key.equalsIgnoreCase(city)) {
                 normalizedCity = key;
                 break;
@@ -229,22 +272,15 @@ public class DeliveryService {
             throw new IllegalArgumentException("Invalid city provided.");
         }
 
-        String stationName = cityStationNames.get(normalizedCity);
+        String stationName = domainProperties.stationFor(normalizedCity);
 
         WeatherEntity weatherToUse;
-        if (datetime != null && !datetime.isEmpty()) {
-            try {
-                DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
-                LocalDateTime queryTime = LocalDateTime.parse(datetime, formatter);
-
-                weatherToUse = weatherRepository.findByStationNameAndTimestampBefore(stationName, queryTime);
-
-                if (weatherToUse == null) {
-                    weatherToUse = weatherRepository.findByStationNameAndTimestampAfter(stationName, queryTime);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to parse datetime '{}': {}, falling back to latest weather data", datetime, e.getMessage());
-                weatherToUse = weatherRepository.findLatestByStationName(stationName);
+        Instant effectiveAt = null;
+        if (datetime != null && !datetime.isBlank()) {
+            effectiveAt = QueryTimeParser.parse(datetime);
+            weatherToUse = weatherRepository.findByStationNameAndTimestampBefore(stationName, effectiveAt);
+            if (weatherToUse == null) {
+                weatherToUse = weatherRepository.findByStationNameAndTimestampAfter(stationName, effectiveAt);
             }
         } else {
             weatherToUse = weatherRepository.findLatestByStationName(stationName);
@@ -254,20 +290,51 @@ public class DeliveryService {
             log.warn("No weather data available for station: {}", stationName);
             throw new IllegalStateException("No weather data available for " + city);
         }
+        if (weatherToUse.getAirTemperature() == null || weatherToUse.getWindSpeed() == null) {
+            log.warn("Incomplete weather data available for station: {}", stationName);
+            throw new IllegalStateException("Incomplete weather data available for " + city);
+        }
 
         log.debug("Using weather data: {}", weatherToUse);
 
         VehicleType vehicleType = VehicleType.fromString(vehicleTypeStr);
+        final String cityForLookup = normalizedCity;
 
-        BaseFeeEntity baseFeeEntity = baseFeeRepository.findByCityAndVehicleType(city, vehicleType.getDisplayName())
-                .orElseThrow(() -> {
-                    log.warn("No base fee found for city: {} and vehicle type: {}", city, vehicleType.getDisplayName());
-                    return new IllegalArgumentException("No base fee found for city and vehicle type.");
+        var baseFeeEntityResult = effectiveAt == null
+                ? baseFeeRepository.findFirstByCityAndVehicleTypeAndDeletedAtIsNullOrderByEffectiveFromDescIdDesc(
+                        cityForLookup, vehicleType.getDisplayName())
+                : baseFeeRepository.findByCityAndVehicleTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDescIdDesc(
+                        cityForLookup, vehicleType.getDisplayName(), effectiveAt)
+                .stream()
+                .findFirst();
+
+        if (baseFeeEntityResult.isEmpty()) {
+            var currentBaseFee = baseFeeRepository.findByCityAndVehicleType(
+                    cityForLookup, vehicleType.getDisplayName());
+            if (currentBaseFee.isPresent()
+                    && (effectiveAt == null || currentBaseFee.get().getEffectiveFrom() == null)) {
+                baseFeeEntityResult = currentBaseFee;
+            }
+        }
+
+        BigDecimal baseFee = baseFeeEntityResult
+                .map(BaseFeeEntity::getBaseFee)
+                .map(BigDecimal::valueOf)
+                .orElseGet(() -> {
+                    var configuredDefault = domainProperties.defaultBaseFee(
+                            cityForLookup, vehicleType.getDisplayName());
+                    Double defaultFee = configuredDefault == null ? null : configuredDefault.doubleValue();
+                    if (defaultFee == null) {
+                        log.warn("No base fee or default found for city: {} and vehicle type: {}",
+                                cityForLookup, vehicleType.getDisplayName());
+                        throw new IllegalArgumentException("No base fee found for city and vehicle type.");
+                    }
+                    log.warn("No base fee found for city: {} and vehicle type: {}, using default: {}",
+                            cityForLookup, vehicleType.getDisplayName(), defaultFee);
+                    return BigDecimal.valueOf(defaultFee);
                 });
-
-        double baseFee = baseFeeEntity.getBaseFee();
-        double extraFee = calculateExtraFee(weatherToUse, vehicleTypeStr);
-        double totalFee = baseFee + extraFee;
+        double extraFee = calculateExtraFee(weatherToUse, vehicleTypeStr, effectiveAt);
+        double totalFee = baseFee.add(BigDecimal.valueOf(extraFee)).doubleValue();
 
         log.info("Calculated fee - Base: {}, Extra: {}, Total: {}", baseFee, extraFee, totalFee);
 

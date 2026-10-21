@@ -122,6 +122,49 @@
             margin-top: 0;
             color: #2c3e50;
         }
+        .management {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 2px solid #ecf0f1;
+        }
+        .management h2 {
+            color: #2c3e50;
+        }
+        .management form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.65rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font: inherit;
+        }
+        .management button {
+            padding: 0.65rem;
+        }
+        .records {
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 0.45rem;
+            border-bottom: 1px solid #ecf0f1;
+            text-align: left;
+        }
+        .management-message {
+            min-height: 1.5rem;
+            margin: 0.5rem 0 1rem;
+        }
     </style>
 </head>
 <body>
@@ -149,9 +192,9 @@
     </div>
 
     <div class="form-group">
-        <label for="datetime">Date and Time (optional):</label>
+        <label for="datetime">Date and Time (optional, Estonia):</label>
         <input type="datetime-local" id="datetime" placeholder="Leave blank for current time">
-        <small class="hint">Format: YYYY-MM-DDTHH:MM (e.g., 2023-06-15T14:30)</small>
+        <small class="hint">Displayed in Europe/Tallinn time. The request includes the timezone offset.</small>
     </div>
 
     <div class="btn-group">
@@ -179,6 +222,49 @@
         <div id="weatherDetails">No data available</div>
     </div>
 
+    <section class="management">
+        <h2>Regional Base Fees</h2>
+        <div id="baseFeeMessage" class="management-message"></div>
+        <div id="baseFees" class="records">Loading...</div>
+        <form id="baseFeeForm">
+            <input name="city" placeholder="City" list="cityOptions" required>
+            <input name="vehicleType" placeholder="Vehicle type" list="vehicleOptions" required>
+            <input name="baseFee" type="number" min="0" step="0.01" placeholder="Base fee" required>
+            <button type="submit">Save base fee</button>
+        </form>
+        <form id="baseFeeDeleteForm">
+            <input name="city" placeholder="City" list="cityOptions" required>
+            <input name="vehicleType" placeholder="Vehicle type" list="vehicleOptions" required>
+            <button type="submit">Delete base fee</button>
+        </form>
+
+        <h2>Fee Configuration</h2>
+        <div id="configurationMessage" class="management-message"></div>
+        <div id="configurations" class="records">Loading...</div>
+        <form id="configurationForm">
+            <input name="key" placeholder="Configuration key" required>
+            <input name="value" placeholder="Value" required>
+            <input name="description" placeholder="Description">
+            <input name="updatedBy" placeholder="Updated by" required>
+            <button type="submit">Save configuration</button>
+        </form>
+        <form id="configurationDeleteForm">
+            <input name="key" placeholder="Configuration key" required>
+            <button type="submit">Delete configuration</button>
+        </form>
+    </section>
+
+    <datalist id="cityOptions">
+        <option value="Tallinn"></option>
+        <option value="Tartu"></option>
+        <option value="Pärnu"></option>
+    </datalist>
+    <datalist id="vehicleOptions">
+        <option value="Car"></option>
+        <option value="Scooter"></option>
+        <option value="Bike"></option>
+    </datalist>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const calculateBtn = document.getElementById('calculateBtn');
@@ -190,6 +276,80 @@
             const schedulerStatus = document.getElementById('schedulerStatus');
             const weatherInfo = document.getElementById('weatherInfo');
             const weatherDetails = document.getElementById('weatherDetails');
+            const baseFeesDiv = document.getElementById('baseFees');
+            const configurationsDiv = document.getElementById('configurations');
+            const baseFeeMessage = document.getElementById('baseFeeMessage');
+            const configurationMessage = document.getElementById('configurationMessage');
+
+            async function readError(response) {
+                try {
+                    const body = await response.json();
+                    return body.message || JSON.stringify(body);
+                } catch {
+                    return await response.text() || `Request failed (${response.status})`;
+                }
+            }
+
+            function showMessage(element, message, isError = false) {
+                element.textContent = message;
+                element.style.color = isError ? '#721c24' : '#155724';
+            }
+
+            function renderTable(container, headers, rows) {
+                container.replaceChildren();
+                if (!rows.length) {
+                    container.textContent = 'No records available.';
+                    return;
+                }
+                const table = document.createElement('table');
+                const headerRow = table.insertRow();
+                headers.forEach(header => {
+                    const cell = document.createElement('th');
+                    cell.textContent = header;
+                    headerRow.appendChild(cell);
+                });
+                rows.forEach(row => {
+                    const tableRow = table.insertRow();
+                    row.forEach(value => {
+                        const cell = tableRow.insertCell();
+                        cell.textContent = value ?? '';
+                    });
+                });
+                container.appendChild(table);
+            }
+
+            async function loadBaseFees() {
+                const response = await fetch('/api/base-fees');
+                if (!response.ok) throw new Error(await readError(response));
+                const fees = await response.json();
+                renderTable(baseFeesDiv,
+                    ['City', 'Vehicle', 'Fee', 'Effective from'],
+                    fees.map(fee => [fee.city, fee.vehicleType, fee.baseFee,
+                        fee.effectiveFrom || 'Initial default']));
+            }
+
+            async function loadConfigurations() {
+                const response = await fetch('/api/fee-config');
+                if (!response.ok) throw new Error(await readError(response));
+                const configurations = await response.json();
+                renderTable(configurationsDiv, ['Key', 'Value'],
+                    Object.entries(configurations));
+            }
+
+            async function refreshManagementData() {
+                try {
+                    await Promise.all([loadBaseFees(), loadConfigurations()]);
+                } catch (error) {
+                    showMessage(configurationMessage, error.message, true);
+                }
+            }
+
+            async function submitManagementForm(form, url, options, messageElement) {
+                const response = await fetch(url, options);
+                if (!response.ok) throw new Error(await readError(response));
+                showMessage(messageElement, await response.text());
+                await refreshManagementData();
+            }
 
             // Function to check weather data availability
             async function checkWeatherData() {
@@ -272,10 +432,29 @@
                 const datetimeInput = document.getElementById('datetime').value;
                 let datetime = null;
 
-                // Convert datetime-local format to ISO format if provided
+                // Interpret the picker value as Europe/Tallinn local time and send an unambiguous UTC instant.
                 if (datetimeInput) {
-                    // datetime-local returns YYYY-MM-DDTHH:MM, we need to add :00 for seconds
-                    datetime = datetimeInput + ':00';
+                    const [datePart, timePart] = datetimeInput.split('T');
+                    const [year, month, day] = datePart.split('-').map(Number);
+                    const [hour, minute] = timePart.split(':').map(Number);
+                    const localMillis = Date.UTC(year, month - 1, day, hour, minute);
+                    const formatter = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: 'Europe/Tallinn',
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                        hourCycle: 'h23'
+                    });
+                    const parts = Object.fromEntries(
+                        formatter.formatToParts(new Date(localMillis))
+                            .filter(part => part.type !== 'literal')
+                            .map(part => [part.type, Number(part.value)])
+                    );
+                    const displayedMillis = Date.UTC(
+                        parts.year, parts.month - 1, parts.day,
+                        parts.hour, parts.minute, parts.second
+                    );
+                    const instant = new Date(localMillis - (displayedMillis - localMillis));
+                    datetime = instant.toISOString();
                 }
 
                 // UI feedback
@@ -322,10 +501,71 @@
             // Weather update button handler
             weatherBtn.addEventListener('click', triggerWeatherUpdate);
 
+            document.getElementById('baseFeeForm').addEventListener('submit', async function(event) {
+                event.preventDefault();
+                const data = new FormData(event.target);
+                const city = data.get('city');
+                const vehicleType = data.get('vehicleType');
+                const params = new URLSearchParams({ baseFee: data.get('baseFee') });
+                try {
+                    await submitManagementForm(event.target,
+                        `/api/base-fees/${encodeURIComponent(city)}/${encodeURIComponent(vehicleType)}?${params}`,
+                        { method: 'PUT' }, baseFeeMessage);
+                    event.target.reset();
+                } catch (error) {
+                    showMessage(baseFeeMessage, error.message, true);
+                }
+            });
+
+            document.getElementById('baseFeeDeleteForm').addEventListener('submit', async function(event) {
+                event.preventDefault();
+                const data = new FormData(event.target);
+                try {
+                    await submitManagementForm(event.target,
+                        `/api/base-fees/${encodeURIComponent(data.get('city'))}/${encodeURIComponent(data.get('vehicleType'))}`,
+                        { method: 'DELETE' }, baseFeeMessage);
+                    event.target.reset();
+                } catch (error) {
+                    showMessage(baseFeeMessage, error.message, true);
+                }
+            });
+
+            document.getElementById('configurationForm').addEventListener('submit', async function(event) {
+                event.preventDefault();
+                const data = new FormData(event.target);
+                const params = new URLSearchParams({
+                    value: data.get('value'),
+                    updatedBy: data.get('updatedBy')
+                });
+                if (data.get('description')) params.set('description', data.get('description'));
+                try {
+                    await submitManagementForm(event.target,
+                        `/api/fee-config/${encodeURIComponent(data.get('key'))}?${params}`,
+                        { method: 'PUT' }, configurationMessage);
+                    event.target.reset();
+                } catch (error) {
+                    showMessage(configurationMessage, error.message, true);
+                }
+            });
+
+            document.getElementById('configurationDeleteForm').addEventListener('submit', async function(event) {
+                event.preventDefault();
+                const key = new FormData(event.target).get('key');
+                try {
+                    await submitManagementForm(event.target,
+                        `/api/fee-config/${encodeURIComponent(key)}`,
+                        { method: 'DELETE' }, configurationMessage);
+                    event.target.reset();
+                } catch (error) {
+                    showMessage(configurationMessage, error.message, true);
+                }
+            });
+
             // Initial status check
             checkWeatherData().then(() => {
                 fetchWeatherData();
             });
+            refreshManagementData();
 
             // Periodic status updates (every 30 seconds)
             setInterval(checkWeatherData, 30000);
